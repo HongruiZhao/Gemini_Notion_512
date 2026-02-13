@@ -50,10 +50,9 @@ function resolveNotionApiKey(): { key?: string; source?: string } {
 export function buildNotionServer(): McpServer {
   const { key: NOTION_API_KEY, source } = resolveNotionApiKey();
   if (!NOTION_API_KEY) {
-    console.error(
+    throw new Error(
       'No Notion API key found. Set one of: NOTION_API_KEY, GEMINI_NOTION_API_KEY, NOTION_TOKEN, NOTION_SECRET.'
     );
-    process.exit(1);
   }
   console.error(`Using Notion API key from: ${source}`);
 

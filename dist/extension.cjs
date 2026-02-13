@@ -45153,27 +45153,61 @@ var init_mcp = __esm({
 });
 
 // src/shared/notionServer.ts
-function getNotionApiKey() {
-  return process.env.NOTION_API_KEY || process.env.GEMINI_NOTION_API_KEY || process.env.GEMINI_API_KEY || process.env.NOTION_TOKEN || process.env.NOTION_SECRET;
+function readWindowsUserEnv(name) {
+  try {
+    const raw = (0, import_node_child_process.execSync)(`reg query HKCU\\Environment /v ${name}`, { encoding: "utf8" });
+    const match = raw.match(new RegExp(`${name}\\s+REG_\\w+\\s+(.+)`));
+    return match?.[1]?.trim();
+  } catch {
+    return void 0;
+  }
+}
+function resolveNotionApiKey() {
+  if (process.platform === "win32") {
+    const candidates2 = [
+      { value: readWindowsUserEnv("NOTION_API_KEY"), source: "HKCU:NOTION_API_KEY" },
+      { value: readWindowsUserEnv("GEMINI_NOTION_API_KEY"), source: "HKCU:GEMINI_NOTION_API_KEY" },
+      { value: readWindowsUserEnv("NOTION_TOKEN"), source: "HKCU:NOTION_TOKEN" },
+      { value: readWindowsUserEnv("NOTION_SECRET"), source: "HKCU:NOTION_SECRET" }
+    ];
+    for (const c of candidates2) {
+      if (typeof c.value === "string" && c.value.trim().length > 0) {
+        return { key: c.value.trim(), source: c.source };
+      }
+    }
+    return {};
+  }
+  const candidates = [
+    { value: process.env.NOTION_API_KEY, source: "NOTION_API_KEY" },
+    { value: process.env.GEMINI_NOTION_API_KEY, source: "GEMINI_NOTION_API_KEY" },
+    { value: process.env.NOTION_TOKEN, source: "NOTION_TOKEN" },
+    { value: process.env.NOTION_SECRET, source: "NOTION_SECRET" }
+  ];
+  for (const c of candidates) {
+    if (typeof c.value === "string" && c.value.trim().length > 0) {
+      return { key: c.value.trim(), source: c.source };
+    }
+  }
+  return {};
 }
 function buildNotionServer() {
-  const NOTION_API_KEY = getNotionApiKey();
+  const { key: NOTION_API_KEY, source } = resolveNotionApiKey();
   if (!NOTION_API_KEY) {
-    console.error(
+    throw new Error(
       "No Notion API key found. Set one of: NOTION_API_KEY, GEMINI_NOTION_API_KEY, NOTION_TOKEN, NOTION_SECRET."
     );
-    process.exit(1);
   }
+  console.error(`Using Notion API key from: ${source}`);
   const notion = new import_client.Client({ auth: NOTION_API_KEY });
   const server3 = new McpServer({
     name: "notion-mcp-server",
-    version: "0.1.0"
+    version: "0.1.8"
   });
   server3.registerTool(
     "notion_search",
     {
       title: "Notion Search",
-      description: "Zoek naar Notion pagina's en databases",
+      description: "Search Notion pages and databases",
       inputSchema: {
         query: external_exports.string().min(1, "query is verplicht"),
         filter: external_exports.object({ value: external_exports.enum(["page", "database"]), property: external_exports.literal("object") }).optional(),
@@ -45214,7 +45248,7 @@ function buildNotionServer() {
     "notion_get_page",
     {
       title: "Get Notion Page",
-      description: "Lees meta/properties van een Notion pagina",
+      description: "Read a Notion page metadata/properties by ID",
       inputSchema: { page_id: external_exports.string().min(1) }
       // No strict output schema; returns full Notion page object
     },
@@ -45231,7 +45265,7 @@ function buildNotionServer() {
     "notion_list_blocks",
     {
       title: "List Notion Blocks",
-      description: "Haal blokken (content) op van een Notion pagina of block",
+      description: "List child blocks (content) of a page or block",
       inputSchema: {
         block_id: external_exports.string().min(1),
         page_size: external_exports.number().int().min(1).max(100).optional()
@@ -45251,7 +45285,7 @@ function buildNotionServer() {
     "notion_append_paragraph",
     {
       title: "Append Paragraph",
-      description: "Voeg een paragraaf tekst toe aan een pagina of block",
+      description: "Append a paragraph block with text to a page or block",
       inputSchema: {
         parent_block_id: external_exports.string().min(1),
         text: external_exports.string().min(1)
@@ -45281,7 +45315,7 @@ function buildNotionServer() {
     "notion_create_page",
     {
       title: "Create Page In Database",
-      description: 'Maak een pagina aan in een Notion database. Geeft de property-naam voor de titel door (default: "Name").',
+      description: 'Create a page in a Notion database. Provide the title property name (default: "Name").',
       inputSchema: {
         database_id: external_exports.string().min(1),
         title: external_exports.string().min(1),
@@ -45315,7 +45349,7 @@ function buildNotionServer() {
     "notion_create_subpage",
     {
       title: "Create Subpage",
-      description: "Maak een subpagina aan onder een bestaande Notion pagina (parent page_id).",
+      description: "Create a subpage under an existing Notion page (parent page_id).",
       inputSchema: {
         parent_page_id: external_exports.string().min(1),
         title: external_exports.string().min(1),
@@ -45349,7 +45383,7 @@ function buildNotionServer() {
     "notion_query_database",
     {
       title: "Query Database",
-      description: "Voer een Notion database query uit met filter/sorts/start_cursor/page_size",
+      description: "Query a Notion database with filter/sorts/start_cursor/page_size",
       inputSchema: {
         database_id: external_exports.string().min(1),
         filter: external_exports.record(external_exports.any()).optional(),
@@ -45377,7 +45411,7 @@ function buildNotionServer() {
     "notion_update_page",
     {
       title: "Update Page Properties",
-      description: "Werk properties bij van een bestaande Notion pagina",
+      description: "Update properties of an existing Notion page",
       inputSchema: {
         page_id: external_exports.string().min(1),
         properties: external_exports.record(external_exports.any())
@@ -45399,7 +45433,7 @@ function buildNotionServer() {
     "notion_get_block",
     {
       title: "Get Block",
-      description: "Lees \xE9\xE9n Notion block op basis van block_id",
+      description: "Read a single Notion block by block_id",
       inputSchema: { block_id: external_exports.string().min(1) }
     },
     async ({ block_id }) => {
@@ -45415,7 +45449,7 @@ function buildNotionServer() {
     "notion_append_blocks",
     {
       title: "Append Blocks",
-      description: "Voeg \xE9\xE9n of meer blokken toe onder een parent block/pagina",
+      description: "Append one or more blocks under a parent block/page",
       inputSchema: {
         parent_block_id: external_exports.string().min(1),
         blocks: external_exports.array(external_exports.record(external_exports.any())).min(1)
@@ -45439,7 +45473,7 @@ function buildNotionServer() {
     "notion_archive_page",
     {
       title: "Archive Page",
-      description: "Archiveer een bestaande Notion pagina",
+      description: "Archive an existing Notion page",
       inputSchema: { page_id: external_exports.string().min(1) }
     },
     async ({ page_id }) => {
@@ -45452,7 +45486,7 @@ function buildNotionServer() {
     "notion_unarchive_page",
     {
       title: "Unarchive Page",
-      description: "Zet een gearchiveerde pagina terug naar actief",
+      description: "Restore an archived Notion page to active",
       inputSchema: { page_id: external_exports.string().min(1) }
     },
     async ({ page_id }) => {
@@ -45465,7 +45499,7 @@ function buildNotionServer() {
     "notion_delete_block",
     {
       title: "Delete Block",
-      description: "Verwijder een block (archiveer)",
+      description: "Delete (archive) a block",
       inputSchema: { block_id: external_exports.string().min(1) }
     },
     async ({ block_id }) => {
@@ -45478,7 +45512,7 @@ function buildNotionServer() {
     "notion_update_block_text",
     {
       title: "Update Block Text",
-      description: "Werk de rich_text van paragraph of heading (1/2/3) bij",
+      description: "Update rich_text of a paragraph or heading (1/2/3)",
       inputSchema: {
         block_id: external_exports.string().min(1),
         type: external_exports.enum(["paragraph", "heading_1", "heading_2", "heading_3"]),
@@ -45496,7 +45530,7 @@ function buildNotionServer() {
     "notion_append_heading",
     {
       title: "Append Heading",
-      description: "Voeg een heading toe (1/2/3)",
+      description: "Append a heading block (1/2/3)",
       inputSchema: {
         parent_block_id: external_exports.string().min(1),
         level: external_exports.enum(["heading_1", "heading_2", "heading_3"]).default("heading_2"),
@@ -45518,7 +45552,7 @@ function buildNotionServer() {
     "notion_append_todo",
     {
       title: "Append To-do",
-      description: "Voeg een to_do item toe (checkbox)",
+      description: "Append a to_do (checkbox) block",
       inputSchema: {
         parent_block_id: external_exports.string().min(1),
         text: external_exports.string().min(1),
@@ -45540,7 +45574,7 @@ function buildNotionServer() {
     "notion_list_databases",
     {
       title: "List Databases",
-      description: "Zoek naar databases in de workspace",
+      description: "List databases in the workspace",
       inputSchema: { query: external_exports.string().optional(), page_size: external_exports.number().int().min(1).max(100).optional() }
     },
     async ({ query, page_size }) => {
@@ -45554,7 +45588,7 @@ function buildNotionServer() {
     "notion_list_pages_in_database",
     {
       title: "List Pages In Database",
-      description: "Haal pagina's op uit een database (zonder filter)",
+      description: "List pages from a database (no filter)",
       inputSchema: { database_id: external_exports.string().min(1), page_size: external_exports.number().int().min(1).max(100).optional() }
     },
     async ({ database_id, page_size }) => {
@@ -45568,7 +45602,7 @@ function buildNotionServer() {
     "notion_append_image_url",
     {
       title: "Append Image (URL)",
-      description: "Voeg een image block toe met external URL",
+      description: "Append an image block with an external URL",
       inputSchema: { parent_block_id: external_exports.string().min(1), url: external_exports.string().url() }
     },
     async ({ parent_block_id, url }) => {
@@ -45586,7 +45620,7 @@ function buildNotionServer() {
     "notion_build_filter",
     {
       title: "Build Database Filter",
-      description: "Stel eenvoudig een filter op voor database queries",
+      description: "Quickly draft a filter for database queries",
       argsSchema: {
         property: completable(external_exports.string(), (v) => ["Name", "Title", "Status", "Assignee", "Tags", "Priority", "Done"].filter((x) => x.toLowerCase().startsWith((v || "").toLowerCase()))),
         operator: completable(external_exports.string(), (v) => ["equals", "does_not_equal", "contains", "does_not_contain", "starts_with", "ends_with", "greater_than", "less_than", "on_or_after", "on_or_before", "is_empty", "is_not_empty"].filter((x) => x.startsWith(v || ""))),
@@ -45613,7 +45647,7 @@ Operators supported vary by property type. Adjust 'rich_text' to e.g. 'title', '
     "notion_blocks_snippet",
     {
       title: "Blocks Snippet",
-      description: "Genereer blocks JSON voor append",
+      description: "Generate blocks JSON for append",
       argsSchema: {
         type: completable(external_exports.string(), (v) => ["paragraph", "heading_1", "heading_2", "to_do", "quote", "bulleted_list_item"].filter((x) => x.startsWith(v || ""))),
         text: external_exports.string()
@@ -45637,7 +45671,7 @@ ${JSON.stringify([{ object: "block", type, [type]: type === "to_do" ? { checked:
     "notion_create_page_snippet",
     {
       title: "Create Page Snippet",
-      description: "Genereer properties JSON voor pagina creatie",
+      description: "Generate properties JSON for page creation",
       argsSchema: { title_property: external_exports.string(), title: external_exports.string() }
     },
     ({ title_property, title }) => ({
@@ -45666,7 +45700,7 @@ function extractTitleFromPage(page) {
   }
   return void 0;
 }
-var import_client;
+var import_client, import_node_child_process;
 var init_notionServer = __esm({
   "src/shared/notionServer.ts"() {
     "use strict";
@@ -45674,6 +45708,7 @@ var init_notionServer = __esm({
     init_mcp();
     init_zod();
     init_completable();
+    import_node_child_process = require("node:child_process");
   }
 });
 
@@ -45815,7 +45850,9 @@ var init_stdio2 = __esm({
 var server_exports = {};
 async function main2() {
   const transport = new StdioServerTransport();
+  console.error("Connecting Notion MCP server to stdio...");
   await server2.connect(transport);
+  console.error("Notion MCP server connected.");
 }
 var server2;
 var init_server2 = __esm({

@@ -5,7 +5,9 @@ const server = buildNotionServer();
 
 async function main() {
   const transport = new StdioServerTransport();
+  console.error('Connecting Notion MCP server to stdio...');
   await server.connect(transport);
+  console.error('Notion MCP server connected.');
 }
 
 main().catch((err) => {
